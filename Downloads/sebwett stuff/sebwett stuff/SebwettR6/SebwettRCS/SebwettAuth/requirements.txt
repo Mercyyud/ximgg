@@ -1,0 +1,7 @@
+discord.py
+asyncpg
+uvicorn
+fastapi
+psycopg2-binary
+cryptography
+aiohttp
