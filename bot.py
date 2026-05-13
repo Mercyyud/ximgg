@@ -1803,6 +1803,114 @@ async def export_keys(interaction: discord.Interaction):
     finally:
         release_db_connection(interaction.guild_id, conn)
 
+@requires_config
+@tree.command(name="keys", description="View all license keys with their status")
+async def keys(interaction: discord.Interaction):
+    """Display all license keys with their current status"""
+    if not await is_admin(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    
+    await interaction.response.defer()
+    conn = get_db_connection(interaction.guild_id)
+    if not conn:
+        return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
+    
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT license_key, duration_seconds, activated_at, expiry_date, is_banned, is_paused, hwid "
+            f"FROM {get_table_prefix(interaction.guild_id)}_users WHERE license_key IS NOT NULL ORDER BY created_at DESC"
+        )
+        rows = cur.fetchall()
+        
+        if not rows:
+            return await safe_send_followup(interaction, "No license keys found.")
+        
+        # Count statistics
+        total = len(rows)
+        active_count = 0
+        inactive_count = 0
+        expired_count = 0
+        banned_count = 0
+        paused_count = 0
+        
+        for _, _, activated, expiry, banned, paused, _ in rows:
+            if banned:
+                banned_count += 1
+            elif paused:
+                paused_count += 1
+            elif activated is None:
+                inactive_count += 1
+            elif expiry and expiry < datetime.now():
+                expired_count += 1
+            else:
+                active_count += 1
+        
+        emb = create_modern_embed("License Keys Overview", guild_id=interaction.guild_id)
+        emb.add_field(name="Total Keys", value=f"``{total}``", inline=True)
+        emb.add_field(name="Active", value=f"``{active_count}``", inline=True)
+        emb.add_field(name="Inactive", value=f"``{inactive_count}``", inline=True)
+        emb.add_field(name="Expired", value=f"``{expired_count}``", inline=True)
+        emb.add_field(name="Banned", value=f"``{banned_count}``", inline=True)
+        emb.add_field(name="Paused", value=f"``{paused_count}``", inline=True)
+        
+        # Show keys list (limit to 20 in embed, full list in file if more)
+        display_keys = rows[:20]
+        keys_text = ""
+        for key, duration, activated, expiry, banned, paused, hwid in display_keys:
+            if banned:
+                status_icon = "🚫"
+            elif paused:
+                status_icon = "⏸️"
+            elif activated is None:
+                status_icon = "⏳"
+            elif expiry and expiry < datetime.now():
+                status_icon = "❌"
+            else:
+                status_icon = "✅"
+            
+            hwid_icon = "🔒" if hwid else "🔓"
+            keys_text += f"{status_icon} {hwid_icon} `{key}`\n"
+        
+        if keys_text:
+            emb.add_field(name=f"Recent Keys (showing {len(display_keys)}/{total})", value=keys_text[:1024], inline=False)
+        
+        emb.add_field(
+            name="Legend",
+            value="✅ Active  •  ⏳ Inactive  •  ❌ Expired  •  🚫 Banned  •  ⏸️ Paused\n🔒 HWID Locked  •  🔓 No HWID",
+            inline=False
+        )
+        
+        # If there are more keys, attach as file
+        if total > 20:
+            lines = [f"All License Keys — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
+            lines.append("=" * 70)
+            for key, duration, activated, expiry, banned, paused, hwid in rows:
+                if banned:
+                    status = "BANNED"
+                elif paused:
+                    status = "PAUSED"
+                elif activated is None:
+                    status = "INACTIVE"
+                elif expiry and expiry < datetime.now():
+                    status = "EXPIRED"
+                else:
+                    status = "ACTIVE"
+                expiry_str = expiry.strftime('%Y-%m-%d %H:%M') if expiry else "Not Set"
+                lines.append(f"{key:<25} {status:<10} {expiry_str}")
+            
+            file_bytes = io.BytesIO("\n".join(lines).encode("utf-8"))
+            file = discord.File(file_bytes, filename=f"all_keys_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            emb.description = f"📎 Full list of {total} keys attached as file."
+            await safe_send_followup(interaction, embed=emb, file=file)
+        else:
+            await safe_send_followup(interaction, embed=emb)
+    except Exception as e:
+        logger.error(f"Error in keys command: {e}")
+        await safe_send_followup(interaction, "Failed to fetch keys.")
+    finally:
+        release_db_connection(interaction.guild_id, conn)
+
 @tree.command(name="loader_opened", description="Log when a user opens the loader")
 @app_commands.describe(
     user="The user who opened the loader",
