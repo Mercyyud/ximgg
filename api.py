@@ -30,7 +30,7 @@ async def log_login(request: dict):
         return {"status": "error", "message": "Missing required fields"}
     
     try:
-        database_url = os.getenv('DATABASE_URL')
+        database_url = os.getenv('MASTER_DB_URL') or os.getenv('DATABASE_URL')
         conn = await asyncpg.connect(database_url)
         
         result = await conn.fetchrow(

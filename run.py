@@ -13,9 +13,9 @@ def run_api():
 
 async def main():
     """Run the Discord bot"""
-    token = os.getenv('TOKEN')
+    token = os.getenv('BOT_TOKEN') or os.getenv('TOKEN')
     if not token:
-        print("WARNING: DISCORD_TOKEN not set. Running API server only.")
+        print("WARNING: BOT_TOKEN not set. Running API server only.")
         return
     await bot.start(token)
 
@@ -28,5 +28,5 @@ if __name__ == "__main__":
     asyncio.run(main())
     
     # Keep the main thread alive if only API is running
-    if not os.getenv('TOKEN'):
+    if not (os.getenv('BOT_TOKEN') or os.getenv('TOKEN')):
         api_thread.join()

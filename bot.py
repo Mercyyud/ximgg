@@ -40,7 +40,7 @@ class TicketBot(commands.Bot):
     async def setup_hook(self):
         await self.init_database()
         await self.load_cogs()
-        atabase_url = os.getenv('DATABASE_URL')
+        database_url = os.getenv('DATABASE_URL')
         if database_url:
             # Use Railway PostgreSQL
             self.db = await asyncpg.create_pool(database_url)
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     import asyncio
     
     async def main():
-        await bot.start(os.getenv('TOKEN'))
+        await bot.start(os.getenv('BOT_TOKEN') or os.getenv('TOKEN'))
     
     # Run both Discord bot and FastAPI server
     import threading
