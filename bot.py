@@ -979,6 +979,7 @@ async def bulkgen(interaction: discord.Interaction, quantity: int = 10, duration
     try:
         cur = conn.cursor()
         all_keys = {}
+        last_error = None
 
         for label, duration_seconds in selected_durations:
             keys = []
@@ -989,14 +990,15 @@ async def bulkgen(interaction: discord.Interaction, quantity: int = 10, duration
                         f"INSERT INTO {get_table_prefix(interaction.guild_id)}_users (license_key, duration_seconds) VALUES (%s, %s)",
                         (key, duration_seconds)
                     )
+                    conn.commit()  # Commit each insert so one failure doesn't kill the rest
                     keys.append(key)
                 except Exception as e:
-                    logger.error(f"Failed to insert key: {e}")
+                    last_error = str(e)
+                    logger.error(f"Failed to insert key '{key}' for {label}: {e}")
                     conn.rollback()
-                    break
+                    # Continue trying other keys instead of breaking
+                    continue
             all_keys[label] = keys
-
-        conn.commit()
 
         # Build text file content
         lines = [f"xim.gg License Keys — Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"]
@@ -1019,7 +1021,11 @@ async def bulkgen(interaction: discord.Interaction, quantity: int = 10, duration
         emb.add_field(name="Per Duration", value=f"``{quantity}``", inline=True)
         emb.add_field(name="Total Keys", value=f"``{total}``", inline=True)
         emb.add_field(name="Durations", value=f"``{durations_str}``", inline=False)
-        emb.description = "⚠️ Duration starts counting after first activation."
+        
+        if total == 0 and last_error:
+            emb.description = f"⚠️ Failed to generate any keys.\n**Error:** ```{last_error[:500]}```\n\nTry running `/migrate_db` if you see a column error."
+        else:
+            emb.description = "⚠️ Duration starts counting after first activation."
 
         await safe_send_followup(interaction, embed=emb, file=file)
         asyncio.create_task(dispatch_log(interaction.guild_id, emb))
