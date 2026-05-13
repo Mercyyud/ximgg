@@ -2942,6 +2942,7 @@ async def help_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=emb, ephemeral=True)
 
 @app.post("/loader_opened")
+@app.post("/api/loader_opened")
 async def loader_opened(request: Request):
     """Track when users open the loader"""
     try:
@@ -2982,6 +2983,7 @@ async def loader_opened(request: Request):
         return {"status": "error", "message": "Internal server error"}
 
 @app.post("/log_login")
+@app.post("/api/log_login")
 async def log_login(request: Request):
     try:
         # Get raw body first for debugging
