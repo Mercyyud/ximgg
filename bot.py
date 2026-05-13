@@ -1539,6 +1539,270 @@ async def reset_all(interaction: discord.Interaction):
     finally:
         release_db_connection(interaction.guild_id, conn)
 
+# --- BULK MANAGEMENT COMMANDS ---
+
+@requires_config
+@tree.command(name="delete_all_keys", description="Delete ALL unactivated license keys")
+async def delete_all_keys(interaction: discord.Interaction):
+    """Delete every license key that hasn't been activated yet"""
+    if not await is_admin(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    
+    await interaction.response.defer()
+    conn = get_db_connection(interaction.guild_id)
+    if not conn:
+        return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
+    
+    try:
+        cur = conn.cursor()
+        # Count keys to delete
+        cur.execute(
+            f"SELECT COUNT(*) FROM {get_table_prefix(interaction.guild_id)}_users WHERE license_key IS NOT NULL AND activated_at IS NULL"
+        )
+        count = cur.fetchone()[0]
+        
+        if count == 0:
+            return await safe_send_followup(interaction, "No unactivated license keys to delete.")
+        
+        # Delete unactivated license keys
+        cur.execute(
+            f"DELETE FROM {get_table_prefix(interaction.guild_id)}_users WHERE license_key IS NOT NULL AND activated_at IS NULL"
+        )
+        conn.commit()
+        
+        emb = create_modern_embed("All Unactivated Keys Deleted", guild_id=interaction.guild_id)
+        emb.add_field(name="Admin", value=interaction.user.mention, inline=True)
+        emb.add_field(name="Keys Deleted", value=f"``{count}``", inline=True)
+        emb.description = "All unactivated license keys have been permanently removed."
+        await safe_send_followup(interaction, embed=emb)
+        asyncio.create_task(dispatch_log(interaction.guild_id, emb))
+        logger.info(f"[DELETE ALL KEYS] {interaction.user} deleted {count} keys in guild {interaction.guild_id}")
+    except Exception as e:
+        logger.error(f"Error in delete_all_keys: {e}")
+        await safe_send_followup(interaction, "Failed to delete keys.")
+    finally:
+        release_db_connection(interaction.guild_id, conn)
+
+@requires_config
+@tree.command(name="delete_expired", description="Delete all expired licenses")
+async def delete_expired(interaction: discord.Interaction):
+    """Delete all users with expired licenses"""
+    if not await is_admin(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    
+    await interaction.response.defer()
+    conn = get_db_connection(interaction.guild_id)
+    if not conn:
+        return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
+    
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT COUNT(*) FROM {get_table_prefix(interaction.guild_id)}_users WHERE expiry_date IS NOT NULL AND expiry_date < NOW()"
+        )
+        count = cur.fetchone()[0]
+        
+        if count == 0:
+            return await safe_send_followup(interaction, "No expired licenses to delete.")
+        
+        cur.execute(
+            f"DELETE FROM {get_table_prefix(interaction.guild_id)}_users WHERE expiry_date IS NOT NULL AND expiry_date < NOW()"
+        )
+        conn.commit()
+        
+        emb = create_modern_embed("Expired Licenses Deleted", guild_id=interaction.guild_id)
+        emb.add_field(name="Admin", value=interaction.user.mention, inline=True)
+        emb.add_field(name="Licenses Deleted", value=f"``{count}``", inline=True)
+        emb.description = "All expired licenses have been permanently removed."
+        await safe_send_followup(interaction, embed=emb)
+        asyncio.create_task(dispatch_log(interaction.guild_id, emb))
+        logger.info(f"[DELETE EXPIRED] {interaction.user} deleted {count} expired licenses in guild {interaction.guild_id}")
+    except Exception as e:
+        logger.error(f"Error in delete_expired: {e}")
+        await safe_send_followup(interaction, "Failed to delete expired licenses.")
+    finally:
+        release_db_connection(interaction.guild_id, conn)
+
+@requires_config
+@tree.command(name="delete_banned", description="Delete all banned users")
+async def delete_banned(interaction: discord.Interaction):
+    """Delete all blacklisted users from the database"""
+    if not await is_admin(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    
+    await interaction.response.defer()
+    conn = get_db_connection(interaction.guild_id)
+    if not conn:
+        return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
+    
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT COUNT(*) FROM {get_table_prefix(interaction.guild_id)}_users WHERE is_banned = TRUE"
+        )
+        count = cur.fetchone()[0]
+        
+        if count == 0:
+            return await safe_send_followup(interaction, "No banned users to delete.")
+        
+        cur.execute(
+            f"DELETE FROM {get_table_prefix(interaction.guild_id)}_users WHERE is_banned = TRUE"
+        )
+        conn.commit()
+        
+        emb = create_modern_embed("Banned Users Purged", guild_id=interaction.guild_id)
+        emb.add_field(name="Admin", value=interaction.user.mention, inline=True)
+        emb.add_field(name="Users Deleted", value=f"``{count}``", inline=True)
+        emb.description = "All banned users have been permanently removed."
+        await safe_send_followup(interaction, embed=emb)
+        asyncio.create_task(dispatch_log(interaction.guild_id, emb))
+        logger.info(f"[DELETE BANNED] {interaction.user} deleted {count} banned users in guild {interaction.guild_id}")
+    except Exception as e:
+        logger.error(f"Error in delete_banned: {e}")
+        await safe_send_followup(interaction, "Failed to delete banned users.")
+    finally:
+        release_db_connection(interaction.guild_id, conn)
+
+@requires_config
+@tree.command(name="wipe_database", description="⚠️ DANGER: Delete ALL users from database (Superadmin only)")
+async def wipe_database(interaction: discord.Interaction):
+    """Wipe the entire user database for this server"""
+    if not await is_superadmin_user(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized. Superadmin only.", ephemeral=True)
+    
+    await interaction.response.defer()
+    conn = get_db_connection(interaction.guild_id)
+    if not conn:
+        return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
+    
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT COUNT(*) FROM {get_table_prefix(interaction.guild_id)}_users")
+        count = cur.fetchone()[0]
+        
+        if count == 0:
+            return await safe_send_followup(interaction, "Database is already empty.")
+        
+        cur.execute(f"DELETE FROM {get_table_prefix(interaction.guild_id)}_users")
+        conn.commit()
+        
+        emb = create_modern_embed("⚠️ Database Wiped", guild_id=interaction.guild_id)
+        emb.add_field(name="Admin", value=interaction.user.mention, inline=True)
+        emb.add_field(name="Records Deleted", value=f"``{count}``", inline=True)
+        emb.description = "**ALL users have been permanently removed from this server's database.**"
+        await safe_send_followup(interaction, embed=emb)
+        asyncio.create_task(dispatch_log(interaction.guild_id, emb))
+        logger.warning(f"[WIPE DATABASE] {interaction.user} wiped {count} users in guild {interaction.guild_id}")
+    except Exception as e:
+        logger.error(f"Error in wipe_database: {e}")
+        await safe_send_followup(interaction, "Failed to wipe database.")
+    finally:
+        release_db_connection(interaction.guild_id, conn)
+
+@requires_config
+@tree.command(name="unban_all", description="Remove ban status from all users")
+async def unban_all(interaction: discord.Interaction):
+    """Unban all blacklisted users"""
+    if not await is_admin(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    
+    await interaction.response.defer()
+    conn = get_db_connection(interaction.guild_id)
+    if not conn:
+        return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
+    
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE {get_table_prefix(interaction.guild_id)}_users SET is_banned = FALSE WHERE is_banned = TRUE"
+        )
+        affected = cur.rowcount
+        conn.commit()
+        
+        if affected == 0:
+            return await safe_send_followup(interaction, "No banned users found.")
+        
+        emb = create_modern_embed("Mass Unban Complete", guild_id=interaction.guild_id)
+        emb.add_field(name="Admin", value=interaction.user.mention, inline=True)
+        emb.add_field(name="Users Unbanned", value=f"``{affected}``", inline=True)
+        await safe_send_followup(interaction, embed=emb)
+        asyncio.create_task(dispatch_log(interaction.guild_id, emb))
+    except Exception as e:
+        logger.error(f"Error in unban_all: {e}")
+        await safe_send_followup(interaction, "Failed to unban all users.")
+    finally:
+        release_db_connection(interaction.guild_id, conn)
+
+@requires_config
+@tree.command(name="export_keys", description="Export all license keys as a text file")
+async def export_keys(interaction: discord.Interaction):
+    """Export all license keys to a downloadable file"""
+    if not await is_admin(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    
+    await interaction.response.defer()
+    conn = get_db_connection(interaction.guild_id)
+    if not conn:
+        return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
+    
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT license_key, duration_seconds, activated_at, expiry_date, is_banned, is_paused "
+            f"FROM {get_table_prefix(interaction.guild_id)}_users WHERE license_key IS NOT NULL ORDER BY created_at DESC"
+        )
+        rows = cur.fetchall()
+        
+        if not rows:
+            return await safe_send_followup(interaction, "No license keys found.")
+        
+        lines = [f"xim.gg License Key Export — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
+        lines.append("=" * 70)
+        lines.append(f"{'KEY':<25} {'DURATION':<12} {'STATUS':<15} {'EXPIRY':<20}")
+        lines.append("-" * 70)
+        
+        for key, duration, activated, expiry, banned, paused in rows:
+            if banned:
+                status = "BANNED"
+            elif paused:
+                status = "PAUSED"
+            elif activated is None:
+                status = "INACTIVE"
+            elif expiry and expiry < datetime.now():
+                status = "EXPIRED"
+            else:
+                status = "ACTIVE"
+            
+            if duration:
+                if duration >= 36500 * 86400:
+                    dur_str = "LIFETIME"
+                elif duration >= 86400:
+                    dur_str = f"{duration // 86400}d"
+                else:
+                    dur_str = f"{duration // 3600}h"
+            else:
+                dur_str = "N/A"
+            
+            expiry_str = expiry.strftime('%Y-%m-%d %H:%M') if expiry else "Not Set"
+            lines.append(f"{key:<25} {dur_str:<12} {status:<15} {expiry_str:<20}")
+        
+        lines.append("-" * 70)
+        lines.append(f"Total: {len(rows)} keys")
+        
+        file_bytes = io.BytesIO("\n".join(lines).encode("utf-8"))
+        file = discord.File(file_bytes, filename=f"keys_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+        
+        emb = create_modern_embed("Keys Exported", guild_id=interaction.guild_id)
+        emb.add_field(name="Total Keys", value=f"``{len(rows)}``", inline=True)
+        emb.add_field(name="Admin", value=interaction.user.mention, inline=True)
+        
+        await safe_send_followup(interaction, embed=emb, file=file)
+    except Exception as e:
+        logger.error(f"Error in export_keys: {e}")
+        await safe_send_followup(interaction, "Failed to export keys.")
+    finally:
+        release_db_connection(interaction.guild_id, conn)
+
 @tree.command(name="loader_opened", description="Log when a user opens the loader")
 @app_commands.describe(
     user="The user who opened the loader",
