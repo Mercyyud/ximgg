@@ -42,116 +42,61 @@ class TicketBot(commands.Bot):
         await self.load_cogs()
     
     async def init_database(self):
-        database_url = os.getenv('MASTER_DB_URL') or os.getenv('DATABASE_URL')
-        if database_url:
-            # Use Railway PostgreSQL
-            self.db = await asyncpg.create_pool(database_url)
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS ticket_configs (
-                    guild_id BIGINT PRIMARY KEY,
-                    ticket_category BIGINT,
-                    transcript_channel BIGINT,
-                    support_role BIGINT,
-                    ticket_counter INTEGER DEFAULT 0,
-                    log_channel_minor BIGINT,
-                    log_channel_major BIGINT
-                )
-            ''')
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS ticket_categories (
-                    id SERIAL PRIMARY KEY,
-                    guild_id BIGINT,
-                    name TEXT,
-                    description TEXT,
-                    emoji TEXT,
-                    role_id BIGINT,
-                    category_id BIGINT
-                )
-            ''')
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS tickets (
-                    channel_id BIGINT PRIMARY KEY,
-                    guild_id BIGINT,
-                    user_id BIGINT,
-                    category TEXT,
-                    created_at TIMESTAMP,
-                    closed_at TIMESTAMP,
-                    closed_by BIGINT
-                )
-            ''')
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS welcome_configs (
-                    guild_id BIGINT PRIMARY KEY,
-                    channel_id BIGINT,
-                    enabled BOOLEAN DEFAULT true
-                )
-            ''')
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS license_keys (
-                    id SERIAL PRIMARY KEY,
-                    key TEXT UNIQUE NOT NULL,
-                    hwid TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_used TIMESTAMP,
-                    is_active BOOLEAN DEFAULT true
-                )
-            ''')
-        else:
-            # Fallback to SQLite
-            import aiosqlite
-            db_path = os.getenv('DB_PATH', 'tickets.db')
-            self.db = await aiosqlite.connect(db_path)
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS ticket_configs (
-                    guild_id INTEGER PRIMARY KEY,
-                    ticket_category INTEGER,
-                    transcript_channel INTEGER,
-                    support_role INTEGER,
-                    ticket_counter INTEGER DEFAULT 0,
-                    log_channel_minor INTEGER,
-                    log_channel_major INTEGER
-                )
-            ''')
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS ticket_categories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    guild_id INTEGER,
-                    name TEXT,
-                    description TEXT,
-                    emoji TEXT,
-                    role_id INTEGER,
-                    category_id INTEGER
-                )
-            ''')
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS tickets (
-                    channel_id INTEGER PRIMARY KEY,
-                    guild_id INTEGER,
-                    user_id INTEGER,
-                    category TEXT,
-                    created_at TIMESTAMP,
-                    closed_at TIMESTAMP,
-                    closed_by INTEGER
-                )
-            ''')
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS welcome_configs (
-                    guild_id INTEGER PRIMARY KEY,
-                    channel_id INTEGER,
-                    enabled INTEGER DEFAULT 1
-                )
-            ''')
-            await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS license_keys (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    key TEXT UNIQUE NOT NULL,
-                    hwid TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_used TIMESTAMP,
-                    is_active INTEGER DEFAULT 1
-                )
-            ''')
-            await self.db.commit()
+        # Use SQLite - all cogs are written for SQLite
+        import aiosqlite
+        db_path = os.getenv('DB_PATH', 'tickets.db')
+        self.db = await aiosqlite.connect(db_path)
+        await self.db.execute('''
+            CREATE TABLE IF NOT EXISTS ticket_configs (
+                guild_id INTEGER PRIMARY KEY,
+                ticket_category INTEGER,
+                transcript_channel INTEGER,
+                support_role INTEGER,
+                ticket_counter INTEGER DEFAULT 0,
+                log_channel_minor INTEGER,
+                log_channel_major INTEGER
+            )
+        ''')
+        await self.db.execute('''
+            CREATE TABLE IF NOT EXISTS ticket_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER,
+                name TEXT,
+                description TEXT,
+                emoji TEXT,
+                role_id INTEGER,
+                category_id INTEGER
+            )
+        ''')
+        await self.db.execute('''
+            CREATE TABLE IF NOT EXISTS tickets (
+                channel_id INTEGER PRIMARY KEY,
+                guild_id INTEGER,
+                user_id INTEGER,
+                category TEXT,
+                created_at TIMESTAMP,
+                closed_at TIMESTAMP,
+                closed_by INTEGER
+            )
+        ''')
+        await self.db.execute('''
+            CREATE TABLE IF NOT EXISTS welcome_configs (
+                guild_id INTEGER PRIMARY KEY,
+                channel_id INTEGER,
+                enabled INTEGER DEFAULT 1
+            )
+        ''')
+        await self.db.execute('''
+            CREATE TABLE IF NOT EXISTS license_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT UNIQUE NOT NULL,
+                hwid TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used TIMESTAMP,
+                is_active INTEGER DEFAULT 1
+            )
+        ''')
+        await self.db.commit()
         
     async def load_cogs(self):
         await self.load_extension('cogs.tickets')
@@ -206,42 +151,23 @@ async def log_login(request: dict):
         return {"status": "error", "message": "Missing required fields"}
     
     try:
-        # Check if key exists and is active
-        if isinstance(bot.db, asyncpg.Pool):
-            # PostgreSQL
-            result = await bot.db.fetchrow(
-                'SELECT id, hwid, is_active FROM license_keys WHERE key = $1',
-                license_key
-            )
-            if not result:
+        # SQLite mode
+        async with bot.db.execute(
+            'SELECT id, hwid, is_active FROM license_keys WHERE key = ?',
+            (license_key,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row:
                 return {"status": "error", "message": "Invalid license key"}
-            if not result['is_active']:
+            if not row[2]:  # is_active
                 return {"status": "error", "message": "License key is inactive"}
-            
-            # Update last_used and bind HWID if not bound
-            await bot.db.execute(
-                'UPDATE license_keys SET hwid = $1, last_used = CURRENT_TIMESTAMP WHERE key = $2',
-                hwid, license_key
-            )
-            return {"status": "success"}
-        else:
-            # SQLite
-            async with bot.db.execute(
-                'SELECT id, hwid, is_active FROM license_keys WHERE key = ?',
-                (license_key,)
-            ) as cursor:
-                row = await cursor.fetchone()
-                if not row:
-                    return {"status": "error", "message": "Invalid license key"}
-                if not row[3]:  # is_active
-                    return {"status": "error", "message": "License key is inactive"}
-            
-            await bot.db.execute(
-                'UPDATE license_keys SET hwid = ?, last_used = CURRENT_TIMESTAMP WHERE key = ?',
-                (hwid, license_key)
-            )
-            await bot.db.commit()
-            return {"status": "success"}
+        
+        await bot.db.execute(
+            'UPDATE license_keys SET hwid = ?, last_used = CURRENT_TIMESTAMP WHERE key = ?',
+            (hwid, license_key)
+        )
+        await bot.db.commit()
+        return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
