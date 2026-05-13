@@ -2008,11 +2008,7 @@ async def deletekeysall(interaction: discord.Interaction, keys_list: str):
     additional_info="Additional information about the event"
 )
 async def loader_opened(interaction: discord.Interaction, user: discord.User, additional_info: str = "No additional info"):
-    # Quick validation first
-    if not await is_admin(interaction.user.id):
-        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
-    
-    # Defer only after validation
+    # Available to everyone - no admin check
     await interaction.response.defer()
     
     try:
