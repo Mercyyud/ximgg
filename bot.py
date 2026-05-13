@@ -1911,6 +1911,97 @@ async def keys(interaction: discord.Interaction):
     finally:
         release_db_connection(interaction.guild_id, conn)
 
+@requires_config
+@tree.command(name="deletekeysall", description="Delete a list of specific license keys")
+@app_commands.describe(
+    keys_list="Comma, space, or newline-separated list of license keys to delete"
+)
+async def deletekeysall(interaction: discord.Interaction, keys_list: str):
+    """Delete a specific list of license keys provided by the admin"""
+    if not await is_admin(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    
+    await interaction.response.defer()
+    
+    # Parse the keys list - support comma, space, newline, or pipe separators
+    keys_to_delete = re.split(r'[,\s\n|;]+', keys_list.strip())
+    keys_to_delete = [k.strip() for k in keys_to_delete if k.strip()]
+    
+    if not keys_to_delete:
+        return await safe_send_followup(interaction, "No valid keys provided.")
+    
+    if len(keys_to_delete) > 500:
+        return await safe_send_followup(interaction, "Too many keys. Maximum 500 keys at once.")
+    
+    conn = get_db_connection(interaction.guild_id)
+    if not conn:
+        return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
+    
+    try:
+        cur = conn.cursor()
+        table = f"{get_table_prefix(interaction.guild_id)}_users"
+        
+        # Find which keys exist
+        cur.execute(
+            f"SELECT license_key FROM {table} WHERE license_key = ANY(%s)",
+            (keys_to_delete,)
+        )
+        existing_keys = [row[0] for row in cur.fetchall()]
+        not_found = [k for k in keys_to_delete if k not in existing_keys]
+        
+        # Delete the existing keys
+        if existing_keys:
+            cur.execute(
+                f"DELETE FROM {table} WHERE license_key = ANY(%s)",
+                (existing_keys,)
+            )
+            conn.commit()
+        
+        deleted_count = len(existing_keys)
+        not_found_count = len(not_found)
+        
+        emb = create_modern_embed("Bulk Key Deletion", guild_id=interaction.guild_id)
+        emb.add_field(name="Admin", value=interaction.user.mention, inline=True)
+        emb.add_field(name="Deleted", value=f"``{deleted_count}``", inline=True)
+        emb.add_field(name="Not Found", value=f"``{not_found_count}``", inline=True)
+        
+        # Show deleted keys preview
+        if existing_keys:
+            preview = "\n".join(existing_keys[:10])
+            if len(existing_keys) > 10:
+                preview += f"\n... and {len(existing_keys) - 10} more"
+            emb.add_field(name="Deleted Keys", value=f"```{preview}```", inline=False)
+        
+        # Show not-found keys preview
+        if not_found:
+            nf_preview = "\n".join(not_found[:10])
+            if len(not_found) > 10:
+                nf_preview += f"\n... and {len(not_found) - 10} more"
+            emb.add_field(name="Not Found", value=f"```{nf_preview}```", inline=False)
+        
+        # Attach full report as file if many keys
+        if len(keys_to_delete) > 20:
+            lines = [f"Bulk Key Deletion Report — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
+            lines.append("=" * 70)
+            lines.append(f"\n[DELETED ({deleted_count})]")
+            lines.extend(existing_keys)
+            lines.append(f"\n[NOT FOUND ({not_found_count})]")
+            lines.extend(not_found)
+            
+            file_bytes = io.BytesIO("\n".join(lines).encode("utf-8"))
+            file = discord.File(file_bytes, filename=f"deletion_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            await safe_send_followup(interaction, embed=emb, file=file)
+        else:
+            await safe_send_followup(interaction, embed=emb)
+        
+        asyncio.create_task(dispatch_log(interaction.guild_id, emb))
+        logger.info(f"[DELETE KEYS] {interaction.user} deleted {deleted_count} keys in guild {interaction.guild_id}")
+    except Exception as e:
+        logger.error(f"Error in deletekeysall: {e}")
+        await safe_send_followup(interaction, f"Failed to delete keys: {str(e)}")
+    finally:
+        release_db_connection(interaction.guild_id, conn)
+
 @tree.command(name="loader_opened", description="Log when a user opens the loader")
 @app_commands.describe(
     user="The user who opened the loader",
