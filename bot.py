@@ -913,29 +913,55 @@ async def gen(interaction: discord.Interaction, days: str, member: Optional[disc
         release_db_connection(interaction.guild_id, conn)
 
 @requires_config
-@tree.command(name="bulkgen", description="Bulk generate license keys for all durations (1d, 7d, 30d, lifetime)")
+@tree.command(name="bulkgen", description="Bulk generate license keys for selected durations")
 @app_commands.describe(
-    quantity="Number of keys to generate per duration (1-100)"
+    quantity="Number of keys to generate per duration (1-100)",
+    durations="Comma-separated durations (e.g., '1d,7d,30d,lifetime'). Default: all four"
 )
-async def bulkgen(interaction: discord.Interaction, quantity: int = 10):
+async def bulkgen(interaction: discord.Interaction, quantity: int = 10, durations: str = "1d,7d,30d,lifetime"):
     if not await is_admin(interaction.user.id):
         return await interaction.response.send_message("Unauthorized.", ephemeral=True)
 
     if quantity < 1 or quantity > 100:
         return await interaction.response.send_message("Quantity must be between 1 and 100.", ephemeral=True)
 
+    # Parse durations parameter
+    duration_map = {
+        "1d": ("1 Day", 1 * 86400),
+        "7d": ("7 Days", 7 * 86400),
+        "30d": ("30 Days", 30 * 86400),
+        "lifetime": ("Lifetime", 36500 * 86400),
+        # Aliases
+        "1 day": ("1 Day", 1 * 86400),
+        "7 days": ("7 Days", 7 * 86400),
+        "30 days": ("30 Days", 30 * 86400),
+        "life": ("Lifetime", 36500 * 86400),
+        "lt": ("Lifetime", 36500 * 86400),
+    }
+    
+    requested = [d.strip().lower() for d in durations.split(",") if d.strip()]
+    selected_durations = []
+    seen = set()
+    for d in requested:
+        if d in duration_map:
+            label, secs = duration_map[d]
+            if label not in seen:
+                selected_durations.append((label, secs))
+                seen.add(label)
+        else:
+            return await interaction.response.send_message(
+                f"Invalid duration: `{d}`. Valid options: `1d`, `7d`, `30d`, `lifetime`",
+                ephemeral=True
+            )
+    
+    if not selected_durations:
+        return await interaction.response.send_message("No valid durations specified.", ephemeral=True)
+
     await interaction.response.defer()
 
     conn = get_db_connection(interaction.guild_id)
     if not conn:
         return await safe_send_followup(interaction, create_not_configured_embed(interaction.guild_id))
-
-    durations = [
-        ("1 Day",    1 * 86400),
-        ("7 Days",   7 * 86400),
-        ("30 Days",  30 * 86400),
-        ("Lifetime", 36500 * 86400),  # 100 years = lifetime
-    ]
 
     # Get custom key format
     custom_format = None
@@ -954,7 +980,7 @@ async def bulkgen(interaction: discord.Interaction, quantity: int = 10):
         cur = conn.cursor()
         all_keys = {}
 
-        for label, duration_seconds in durations:
+        for label, duration_seconds in selected_durations:
             keys = []
             for _ in range(quantity):
                 key = generate_license_key(custom_format)
@@ -987,11 +1013,12 @@ async def bulkgen(interaction: discord.Interaction, quantity: int = 10):
         file_bytes = io.BytesIO(file_content.encode("utf-8"))
         file = discord.File(file_bytes, filename=f"ximgg_keys_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
 
+        durations_str = " / ".join([label for label, _ in selected_durations])
         emb = create_modern_embed("Bulk Keys Generated", guild_id=interaction.guild_id)
         emb.add_field(name="Admin", value=interaction.user.mention, inline=True)
         emb.add_field(name="Per Duration", value=f"``{quantity}``", inline=True)
         emb.add_field(name="Total Keys", value=f"``{total}``", inline=True)
-        emb.add_field(name="Durations", value="``1 Day / 7 Days / 30 Days / Lifetime``", inline=False)
+        emb.add_field(name="Durations", value=f"``{durations_str}``", inline=False)
         emb.description = "⚠️ Duration starts counting after first activation."
 
         await safe_send_followup(interaction, embed=emb, file=file)
