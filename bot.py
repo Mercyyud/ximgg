@@ -190,6 +190,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+async def root():
+    return {"status": "running", "service": "xim.gg auth api"}
+
 @app.post("/api/log_login")
 async def log_login(request: dict):
     guild_id = request.get("guild_id")
