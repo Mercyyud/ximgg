@@ -2008,15 +2008,18 @@ async def deletekeysall(interaction: discord.Interaction, keys_list: str):
     additional_info="Additional information about the event"
 )
 async def loader_opened(interaction: discord.Interaction, user: discord.User, additional_info: str = "No additional info"):
-    # Available to everyone - no admin check
+    # Admin-only command
+    if not await is_admin(interaction.user.id):
+        return await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    
     await interaction.response.defer()
     
     try:
-        # Log the loader opened event
+        # Log the loader opened event - this dispatches to the configured logging channel
         await log_loader_event(interaction.guild_id, user.id, "loader_opened", additional_info=additional_info)
         
         emb = create_modern_embed("🚪 Loader Event Logged", guild_id=interaction.guild_id, color=0x00AAFF)
-        emb.description = f"Successfully logged loader opening event for {user.mention}"
+        emb.description = f"Successfully logged loader opening event for {user.mention} to the logging channel."
         emb.add_field(name="User ID", value=f"```{user.id}```", inline=True)
         emb.add_field(name="Event Type", value="```Loader Opened```", inline=True)
         emb.add_field(name="Additional Info", value=f"```{additional_info}```", inline=False)
