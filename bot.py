@@ -40,7 +40,9 @@ class TicketBot(commands.Bot):
     async def setup_hook(self):
         await self.init_database()
         await self.load_cogs()
-        database_url = os.getenv('DATABASE_URL')
+    
+    async def init_database(self):
+        database_url = os.getenv('MASTER_DB_URL') or os.getenv('DATABASE_URL')
         if database_url:
             # Use Railway PostgreSQL
             self.db = await asyncpg.create_pool(database_url)
@@ -55,22 +57,22 @@ class TicketBot(commands.Bot):
                     log_channel_major BIGINT
                 )
             ''')
-            await self.d.execute('''
-                CREATE TABLE IF NOT EXISTS ticketcategories (
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS ticket_categories (
                     id SERIAL PRIMARY KEY,
                     guild_id BIGINT,
                     name TEXT,
-                    descrition TEXT,
+                    description TEXT,
                     emoji TEXT,
                     role_id BIGINT,
                     category_id BIGINT
                 )
             ''')
             await self.db.execute('''
-                CREATE TABLE IF NOT EXISTS tickes (
-                    cannel_id BIGINT PRIMARY KEY,
+                CREATE TABLE IF NOT EXISTS tickets (
+                    channel_id BIGINT PRIMARY KEY,
                     guild_id BIGINT,
-                   user_id BIGINT,
+                    user_id BIGINT,
                     category TEXT,
                     created_at TIMESTAMP,
                     closed_at TIMESTAMP,
