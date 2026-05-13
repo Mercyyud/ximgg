@@ -2949,12 +2949,33 @@ async def loader_opened(request: Request):
         data = await request.json()
         
         guild_id = str(data.get("guild_id", ""))
-        user_id = data.get("user_id")
+        user_id = data.get("user_id") or data.get("license_key")
+        hwid = data.get("hwid") or data.get("machine_sid")
         ip = request.client.host or "0.0.0.0"
+        additional_info = data.get("additional_info") or data.get("info")
         
-        # Log the loader opened event
-        await log_loader_event(int(guild_id), int(user_id), "loader_opened", ip=ip)
+        if not guild_id or not user_id:
+            logger.warning(f"[LOADER OPENED] Missing required fields: guild_id={guild_id}, user_id={user_id}")
+            return {"status": "error", "message": "Missing required fields: guild_id and user_id/license_key"}
         
+        # Strip leading zeros from guild_id
+        guild_id = guild_id.lstrip("0") if guild_id else ""
+        
+        # Sanitize HWID
+        if hwid:
+            hwid = validate_input(str(hwid), max_length=128)
+        
+        # Log the loader opened event with all details
+        await log_loader_event(
+            int(guild_id),
+            user_id,
+            "loader_opened",
+            hwid=hwid,
+            ip=ip,
+            additional_info=additional_info
+        )
+        
+        logger.info(f"[LOADER OPENED] Guild: {guild_id} | User: {user_id} | IP: {ip} | HWID: {hwid}")
         return {"status": "success", "message": "Loader opened event logged"}
         
     except Exception as e:
