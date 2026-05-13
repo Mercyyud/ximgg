@@ -1,0 +1,35 @@
+# Build outputs
+bin/
+obj/
+*.exe
+*.dll
+*.lib
+*.pdb
+*.obj
+*.o
+
+# ONNX Runtime
+onnxruntime/
+
+# Python
+*.pyc
+__pycache__/
+*.pyc
+inspect_model.py
+
+# Submodules
+website/
+
+# Scratch files
+scratch/
+
+# Model files
+*.onnx
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.sln
+*.vcxproj
