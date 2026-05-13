@@ -1,7 +1,8 @@
 discord.py
-python-dotenv
-aiosqlite
 asyncpg
+uvicorn
 fastapi
-uvicorn[standard]
-aiofiles
+psycopg2-binary
+cryptography
+aiohttp
+python-dotenv
