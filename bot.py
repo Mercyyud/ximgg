@@ -4,10 +4,13 @@ from discord.ext import commands
 import os
 import json
 import aiofiles
-import aiosqlite
+import asyncpg
 from dotenv import load_dotenv
 from datetime import datetime
 import logging
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 # Setup logging to file
 logging.basicConfig(
@@ -37,62 +40,116 @@ class TicketBot(commands.Bot):
     async def setup_hook(self):
         await self.init_database()
         await self.load_cogs()
-        
-    async def init_database(self):
-        import os
-        db_path = os.getenv('DB_PATH', 'tickets.db')
-        self.db = await aiosqlite.connect(db_path)
-        await self.db.execute('''
-            CREATE TABLE IF NOT EXISTS ticket_configs (
-                guild_id INTEGER PRIMARY KEY,
-                ticket_category INTEGER,
-                transcript_channel INTEGER,
-                support_role INTEGER,
-                ticket_counter INTEGER DEFAULT 0,
-                log_channel_minor INTEGER,
-                log_channel_major INTEGER
-            )
-        ''')
-        await self.db.execute('''
-            CREATE TABLE IF NOT EXISTS ticket_categories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id INTEGER,
-                name TEXT,
-                description TEXT,
-                emoji TEXT,
-                role_id INTEGER,
-                category_id INTEGER
-            )
-        ''')
-        await self.db.execute('''
-            CREATE TABLE IF NOT EXISTS tickets (
-                channel_id INTEGER PRIMARY KEY,
-                guild_id INTEGER,
-                user_id INTEGER,
-                category TEXT,
-                created_at TIMESTAMP,
-                closed_at TIMESTAMP,
-                closed_by INTEGER
-            )
-        ''')
-        await self.db.execute('''
-            CREATE TABLE IF NOT EXISTS welcome_configs (
-                guild_id INTEGER PRIMARY KEY,
-                channel_id INTEGER,
-                enabled INTEGER DEFAULT 1
-            )
-        ''')
-        await self.db.execute('''
-            CREATE TABLE IF NOT EXISTS license_keys (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                key TEXT UNIQUE NOT NULL,
-                hwid TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_used TIMESTAMP,
-                is_active INTEGER DEFAULT 1
-            )
-        ''')
-        await self.db.commit()
+        atabase_url = os.getenv('DATABASE_URL')
+        if database_url:
+            # Use Railway PostgreSQL
+            self.db = await asyncpg.create_pool(database_url)
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS ticket_configs (
+                    guild_id BIGINT PRIMARY KEY,
+                    ticket_category BIGINT,
+                    transcript_channel BIGINT,
+                    support_role BIGINT,
+                    ticket_counter INTEGER DEFAULT 0,
+                    log_channel_minor BIGINT,
+                    log_channel_major BIGINT
+                )
+            ''')
+            await self.d.execute('''
+                CREATE TABLE IF NOT EXISTS ticketcategories (
+                    id SERIAL PRIMARY KEY,
+                    guild_id BIGINT,
+                    name TEXT,
+                    descrition TEXT,
+                    emoji TEXT,
+                    role_id BIGINT,
+                    category_id BIGINT
+                )
+            ''')
+            awit self.db.execute('''
+                CREATE TABLE IF NOT EXISTS tickes (
+                    cannel_id BIGINT PRIMARY KEY,
+                    guild_id BIGINT,
+                   user_id BIGINT,
+                    category TEXT,
+                    created_at TIMESTAMP,
+                    closed_at TIMESTAMP,
+                    closed_by BIGINT
+                )
+            ''')
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS welcome_configs (
+                    guild_id BIGINT PRIMARY KEY,
+                    channel_id BIGINT,
+                    enabled BOOLEAN DEFAULT true
+                )
+            ''')
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS license_keys (
+                    id SERIAL PRIMARY KEY,
+                    key TEXT UNIQUE NOT NULL,
+                    hwid TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_used TIMESTAMP,
+                    is_active BOOLEAN DEFAULT true
+                )
+            ''')
+        else:
+            # Fallback to SQLite
+            import aiosqlite
+            db_path = os.getenv('DB_PATH', 'tickets.db')
+            self.db = await aiosqlite.connect(db_path)
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS ticket_configs (
+                    guild_id INTEGER PRIMARY KEY,
+                    ticket_category INTEGER,
+                    transcript_channel INTEGER,
+                    support_role INTEGER,
+                    ticket_counter INTEGER DEFAULT 0,
+                    log_channel_minor INTEGER,
+                    log_channel_major INTEGER
+                )
+            ''')
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS ticket_categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER,
+                    name TEXT,
+                    description TEXT,
+                    emoji TEXT,
+                    role_id INTEGER,
+                    category_id INTEGER
+                )
+            ''')
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS tickets (
+                    channel_id INTEGER PRIMARY KEY,
+                    guild_id INTEGER,
+                    user_id INTEGER,
+                    category TEXT,
+                    created_at TIMESTAMP,
+                    closed_at TIMESTAMP,
+                    closed_by INTEGER
+                )
+            ''')
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS welcome_configs (
+                    guild_id INTEGER PRIMARY KEY,
+                    channel_id INTEGER,
+                    enabled INTEGER DEFAULT 1
+                )
+            ''')
+            await self.db.execute('''
+                CREATE TABLE IF NOT EXISTS license_keys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT UNIQUE NOT NULL,
+                    hwid TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_used TIMESTAMP,
+                    is_active INTEGER DEFAULT 1
+                )
+            ''')
+            await self.db.commit()
         
     async def load_cogs(self):
         await self.load_extension('cogs.tickets')
