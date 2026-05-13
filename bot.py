@@ -66,7 +66,7 @@ class TicketBot(commands.Bot):
                     category_id BIGINT
                 )
             ''')
-            awit self.db.execute('''
+            await self.db.execute('''
                 CREATE TABLE IF NOT EXISTS tickes (
                     cannel_id BIGINT PRIMARY KEY,
                     guild_id BIGINT,
@@ -180,5 +180,77 @@ bot = TicketBot()
 async def on_close():
     await bot.db.close()
 
+# FastAPI app for auth endpoint
+app = FastAPI(title="Xim.gg Auth API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.post("/api/log_login")
+async def log_login(request: dict):
+    guild_id = request.get("guild_id")
+    license_key = request.get("license_key")
+    hwid = request.get("hwid")
+    
+    if not guild_id or not license_key or not hwid:
+        return {"status": "error", "message": "Missing required fields"}
+    
+    try:
+        # Check if key exists and is active
+        if isinstance(bot.db, asyncpg.Pool):
+            # PostgreSQL
+            result = await bot.db.fetchrow(
+                'SELECT id, hwid, is_active FROM license_keys WHERE key = $1',
+                license_key
+            )
+            if not result:
+                return {"status": "error", "message": "Invalid license key"}
+            if not result['is_active']:
+                return {"status": "error", "message": "License key is inactive"}
+            
+            # Update last_used and bind HWID if not bound
+            await bot.db.execute(
+                'UPDATE license_keys SET hwid = $1, last_used = CURRENT_TIMESTAMP WHERE key = $2',
+                hwid, license_key
+            )
+            return {"status": "success"}
+        else:
+            # SQLite
+            async with bot.db.execute(
+                'SELECT id, hwid, is_active FROM license_keys WHERE key = ?',
+                (license_key,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    return {"status": "error", "message": "Invalid license key"}
+                if not row[3]:  # is_active
+                    return {"status": "error", "message": "License key is inactive"}
+            
+            await bot.db.execute(
+                'UPDATE license_keys SET hwid = ?, last_used = CURRENT_TIMESTAMP WHERE key = ?',
+                (hwid, license_key)
+            )
+            await bot.db.commit()
+            return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 if __name__ == "__main__":
-    bot.run(os.getenv('TOKEN'))
+    import asyncio
+    
+    async def main():
+        await bot.start(os.getenv('TOKEN'))
+    
+    # Run both Discord bot and FastAPI server
+    import threading
+    def run_api():
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    api_thread = threading.Thread(target=run_api, daemon=True)
+    api_thread.start()
+    
+    asyncio.run(main())
