@@ -27,7 +27,7 @@ db_executor = ThreadPoolExecutor(max_workers=20)
 # --- CONFIGURATION ---
 MASTER_DB_URL = os.getenv("MASTER_DB_URL", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-SEBWETT_ID = int(os.getenv("SEBWETT_ID", "983407797972656129"))
+SEBWETT_ID = int(os.getenv("SEBWETT_ID", "983407797972656129", "1503282641221320815"))
 OLD_GUILD_ID = int(os.getenv("OLD_GUILD_ID", "1419533443812950088"))
 PORT = int(os.getenv("PORT", "8000"))
 
