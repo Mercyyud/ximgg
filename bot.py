@@ -27,7 +27,10 @@ db_executor = ThreadPoolExecutor(max_workers=20)
 # --- CONFIGURATION ---
 MASTER_DB_URL = os.getenv("MASTER_DB_URL", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-SEBWETT_ID = int(os.getenv("SEBWETT_ID", "983407797972656129", "1503282641221320815"))
+SEBWETT_IDS = [
+    int(os.getenv("SEBWETT_ID_1", "983407797972656129")),
+    int(os.getenv("SEBWETT_ID_2", "1503282641221320815")),
+]
 OLD_GUILD_ID = int(os.getenv("OLD_GUILD_ID", "1419533443812950088"))
 PORT = int(os.getenv("PORT", "8000"))
 
@@ -150,7 +153,7 @@ def requires_setup_permission(func):
     """Decorator to allow only setup command on unconfigured servers"""
     async def wrapper(interaction: discord.Interaction, *args, **kwargs):
         # Check if user is system owner (always allowed for setup)
-        if interaction.user.id != SEBWETT_ID:
+        if interaction.user.id not in SEBWETT_IDS:
             emb = create_modern_embed("Access Denied", guild_id=interaction.guild_id)
             emb.description = "Only the system owner can run `/setup` on unconfigured servers."
             return await interaction.response.send_message(embed=emb, ephemeral=True)
@@ -430,11 +433,11 @@ async def log_loader_event(guild_id, user_id, event_type, hwid=None, ip=None, ad
 
 async def is_superadmin(user_id: int) -> bool:
     """Check if user is the real superadmin (sebwett only)"""
-    return user_id == SEBWETT_ID
+    return user_id in SEBWETT_IDS
 
 async def is_admin(user_id: int):
     """Check if user is an admin (can do admin commands like /gen, /ban, etc.)"""
-    if user_id == SEBWETT_ID: 
+    if user_id in SEBWETT_IDS: 
         return True
     try:
         conn = psycopg2.connect(MASTER_DB_URL)
@@ -448,7 +451,7 @@ async def is_admin(user_id: int):
 
 async def is_superadmin_user(user_id: int) -> bool:
     """Check if user is a superadmin (can do /link, /setup, /unlink, etc.)"""
-    if user_id == SEBWETT_ID:
+    if user_id in SEBWETT_IDS:
         return True
     try:
         conn = psycopg2.connect(MASTER_DB_URL)
@@ -654,7 +657,7 @@ async def superadmin_list(interaction: discord.Interaction):
         
         list_str = "\n".join([f"• <@{s[0]}> ({s[0]})" for s in superadmins]) or "No superadmins added."
         emb = create_modern_embed("System Superadmins", guild_id=interaction.guild_id)
-        emb.add_field(name="Real Superadmin", value=f"• <@{SEBWETT_ID}> ({SEBWETT_ID})", inline=False)
+        emb.add_field(name="Real Superadmins", value="\n".join([f"• <@{sid}> ({sid})" for sid in SEBWETT_IDS]), inline=False)
         emb.add_field(name="Additional Superadmins", value=list_str, inline=False)
         emb.description = "Superadmins can use /link, /setup, /unlink, and manage admins."
         await interaction.followup.send(embed=emb)
